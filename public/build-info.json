@@ -1,0 +1,8 @@
+{
+  "source_repository": "https://github.com/tsukushibito/rts-base-system",
+  "source_commit": "71da7b322613de8afbe8da5f3ba5029e8ce69088",
+  "godot_version": "4.7.2.stable.official.ed1daf0bf",
+  "built_at_utc": "2026-09-08T11:35:25.589614+00:00",
+  "preset": "Web",
+  "threads": false
+}
