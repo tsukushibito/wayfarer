@@ -29,7 +29,8 @@ GitHubのSettings → Pages → SourceはGitHub Actionsです。
 過去版に戻す場合は該当する更新コミットをrevertしてpushします。
 
 Web版は単一スレッド・Compatibility描画です。ネイティブ版の見た目・性能とは差があります。
-保存読込後の進行・再保存の自動検査失敗は元リポジトリのBeads `rts-e29`で追跡中です。
+保存検査の同期待ちを修正し、公開版で保存・再読み込み・復元後の再保存を確認しています。
+原因と検証結果は[Web保存検査の検証](https://github.com/tsukushibito/rts-base-system/blob/main/docs/quality/web-save-validation-2026-09-08.md)を参照してください。
 フォント・音源・Godotのライセンス通知は公開成果物に同梱しています。
 
 構成参考: [GitHub Pages公式](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)、
