@@ -1,220 +1,185 @@
 <!DOCTYPE html>
-<html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
-		<title>WAYFARER — 移動本陣</title>
-		<style>
-html, body, #canvas {
-	margin: 0;
-	padding: 0;
-	border: 0;
-}
-
-body {
-	color: white;
-	background-color: black;
-	overflow: hidden;
-	touch-action: none;
-}
-
-#canvas {
-	display: block;
-}
-
-#canvas:focus {
-	outline: none;
-}
-
-#status, #status-splash, #status-progress {
-	position: absolute;
-	left: 0;
-	right: 0;
-}
-
-#status, #status-splash {
-	top: 0;
-	bottom: 0;
-}
-
-#status {
-	background-color: #242424;
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	align-items: center;
-	visibility: hidden;
-}
-
-#status-splash {
-	max-height: 100%;
-	max-width: 100%;
-	margin: auto;
-}
-
-#status-splash.show-image--false {
-	display: none;
-}
-
-#status-splash.fullsize--true {
-	height: 100%;
-	width: 100%;
-	object-fit: contain;
-}
-
-#status-splash.use-filter--false {
-	image-rendering: pixelated;
-}
-
-#status-progress, #status-notice {
-	display: none;
-}
-
-#status-progress {
-	bottom: 10%;
-	width: 50%;
-	margin: 0 auto;
-}
-
-#status-notice {
-	background-color: #5b3943;
-	border-radius: 0.5rem;
-	border: 1px solid #9b3943;
-	color: #e0e0e0;
-	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
-	line-height: 1.3;
-	margin: 0 2rem;
-	overflow: hidden;
-	padding: 1rem;
-	text-align: center;
-	z-index: 1;
-}
-		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WAYFARER — 移動本陣</title>
+  <style>
+    html, body, #canvas { margin: 0; padding: 0; border: 0; width: 100%; height: 100%; }
+    body { background: #242424; color: #f4edda; overflow: hidden; touch-action: none; }
+    #canvas { display: block; }
+    #canvas:focus { outline: none; }
+    #status { position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px; padding: 24px;
+      background: #242424; font: 16px/1.6 system-ui, sans-serif; text-align: center; }
+    #status-splash { max-width: min(240px, 50vw); max-height: 32vh; object-fit: contain; }
+    #status-splash.show-image--false { display: none; }
+    #status-splash.use-filter--false { image-rendering: pixelated; }
+    #status-progress { width: min(440px, 80vw); height: 14px; accent-color: #d6b878; }
+    #status-message, #status-notice { margin: 0; max-width: 36em; }
+    #status-notice { white-space: pre-line; color: #ffdbb0; }
+    #status-retry { padding: 10px 24px; border: 1px solid #c6b381; border-radius: 6px;
+      background: #284c43; color: #fff6dc; font: inherit; cursor: pointer; }
+    #status-retry:focus-visible { outline: 3px solid #fff6dc; outline-offset: 3px; }
+    [hidden] { display: none !important; }
+  </style>
+  <link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 
-	</head>
-	<body>
-		<canvas id="canvas">
-			Your browser does not support the canvas tag.
-		</canvas>
+</head>
+<body>
+  <canvas id="canvas" tabindex="0">このブラウザではゲーム画面を表示できません。</canvas>
+  <noscript>プレイするにはJavaScriptを有効にしてください。</noscript>
+  <div id="status">
+    <img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
+    <p id="status-message" role="status" aria-live="polite">ゲームを読み込んでいます</p>
+    <progress id="status-progress" max="100" value="0" aria-label="読み込み状況"></progress>
+    <p id="status-notice" role="alert"></p>
+    <button id="status-retry" type="button" hidden>再読み込み</button>
+  </div>
+  <script src="index.js"></script>
+  <script>
+  (() => {
+    const config = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":40646728,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+    const overlay = document.getElementById('status');
+    const message = document.getElementById('status-message');
+    const progress = document.getElementById('status-progress');
+    const notice = document.getElementById('status-notice');
+    const retryButton = document.getElementById('status-retry');
+    const idleMs = 60000;
+    const maxAttempts = 3;
+    let initializing = true;
+    let failed = false;
+    let packController;
+    let packLoaded = 0;
+    let engineLoaded = 0;
+    let lastProgressAt = performance.now();
+    let retrying = false;
+    const packPath = config.mainPack || `${config.executable}.pck`;
+    const packSize = config.fileSizes[packPath];
+    const engineSize = config.fileSizes[`${config.executable}.wasm`];
+    let watchdog;
 
-		<noscript>
-			Your browser does not support JavaScript.
-		</noscript>
+    retryButton.addEventListener('click', () => location.reload());
 
-		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
-			<progress id="status-progress"></progress>
-			<div id="status-notice"></div>
-		</div>
+    function showFailure(error) {
+      if (!initializing || failed) return;
+      failed = true;
+      packController?.abort();
+      clearInterval(watchdog);
+      message.textContent = 'ゲームを読み込めませんでした';
+      notice.textContent = '通信環境を確認して、再読み込みしてください。\n保存データはそのまま使えます。';
+      retryButton.hidden = false;
+      progress.hidden = true;
+      console.error('WAYFARER startup:', error);
+    }
 
-		<script src="index.js"></script>
-		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":40646728,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
-const GODOT_THREADS_ENABLED = false;
-const engine = new Engine(GODOT_CONFIG);
+    // Godot 4.7.2 can leave its init promise pending after a WASM stream error.
+    // Keep such failures visible as well as the errors caught by our PCK reader.
+    function onUnhandled(event) {
+      if (!initializing) return;
+      event.preventDefault();
+      showFailure(event.reason || event.error || event.message);
+    }
+    window.addEventListener('unhandledrejection', onUnhandled);
+    window.addEventListener('error', onUnhandled);
 
-(function () {
-	const statusOverlay = document.getElementById('status');
-	const statusProgress = document.getElementById('status-progress');
-	const statusNotice = document.getElementById('status-notice');
+    function updateProgress() {
+      if (failed) return;
+      lastProgressAt = performance.now();
+      const total = packSize + engineSize;
+      const percent = Math.min(100, Math.floor(100 * (packLoaded + engineLoaded) / total));
+      progress.value = percent;
+      message.textContent = percent === 100 ? '起動準備中です' : `ゲームを読み込んでいます · ${percent}%`;
+      if (!retrying) notice.textContent = '';
+      retryButton.hidden = true;
+    }
 
-	let initializing = true;
-	let statusMode = '';
+    async function downloadPack() {
+      if (!Number.isSafeInteger(packSize) || packSize <= 0) throw new Error('Missing PCK size');
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (failed) throw new Error('Startup cancelled');
+        packController = new AbortController();
+        const controller = packController;
+        let idleTimer;
+        let reader;
+        function armTimeout() {
+          clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => controller.abort(), idleMs);
+        }
+        packLoaded = 0;
+        retrying = attempt > 1;
+        if (retrying) notice.textContent = `通信を再試行しています（${attempt}/${maxAttempts}）`;
+        updateProgress();
+        armTimeout();
+        try {
+          const response = await fetch(packPath, {
+            signal: controller.signal,
+            cache: attempt === 1 ? 'default' : 'reload',
+          });
+          if (!response.ok) throw new Error(`PCK HTTP ${response.status}`);
+          reader = response.body.getReader();
+          const bytes = new Uint8Array(packSize);
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (packLoaded + value.length > packSize) throw new Error('PCK size changed');
+            bytes.set(value, packLoaded);
+            packLoaded += value.length;
+            if (value.length) {
+              armTimeout();
+              updateProgress();
+            }
+          }
+          if (packLoaded !== packSize) throw new Error('Incomplete PCK download');
+          retrying = false;
+          updateProgress();
+          return bytes;
+        } catch (error) {
+          controller.abort();
+          if (failed || attempt === maxAttempts) throw error;
+          notice.textContent = '通信が途切れました。もう一度読み込みます。';
+          // Only this failed download is retried; retain the initialized engine.
+          await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+        } finally {
+          clearTimeout(idleTimer);
+          if (reader) {
+            await reader.cancel().catch(() => {});
+            reader.releaseLock();
+          }
+        }
+      }
+    }
 
-	function setStatusMode(mode) {
-		if (statusMode === mode || !initializing) {
-			return;
-		}
-		if (mode === 'hidden') {
-			statusOverlay.remove();
-			initializing = false;
-			return;
-		}
-		statusOverlay.style.visibility = 'visible';
-		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
-		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
-		statusMode = mode;
-	}
-
-	function setStatusNotice(text) {
-		while (statusNotice.lastChild) {
-			statusNotice.removeChild(statusNotice.lastChild);
-		}
-		const lines = text.split('\n');
-		lines.forEach((line) => {
-			statusNotice.appendChild(document.createTextNode(line));
-			statusNotice.appendChild(document.createElement('br'));
-		});
-	}
-
-	function displayFailureNotice(err) {
-		console.error(err);
-		if (err instanceof Error) {
-			setStatusNotice(err.message);
-		} else if (typeof err === 'string') {
-			setStatusNotice(err);
-		} else {
-			setStatusNotice('An unknown error occurred.');
-		}
-		setStatusMode('notice');
-		initializing = false;
-	}
-
-	const missing = Engine.getMissingFeatures({
-		threads: GODOT_THREADS_ENABLED,
-	});
-
-	if (missing.length !== 0) {
-		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
-			let serviceWorkerRegistrationPromise;
-			try {
-				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
-			} catch (err) {
-				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
-			}
-			// There's a chance that installing the service worker would fix the issue
-			Promise.race([
-				serviceWorkerRegistrationPromise.then((registration) => {
-					if (registration != null) {
-						return Promise.reject(new Error('Service worker already exists.'));
-					}
-					return registration;
-				}).then(() => engine.installServiceWorker()),
-				// For some reason, `getRegistration()` can stall
-				new Promise((resolve) => {
-					setTimeout(() => resolve(), 2000);
-				}),
-			]).then(() => {
-				// Reload if there was no error.
-				window.location.reload();
-			}).catch((err) => {
-				console.error('Error while registering service worker:', err);
-			});
-		} else {
-			// Display the message as usual
-			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
-			displayFailureNotice(missingMsg + missing.join('\n'));
-		}
-	} else {
-		setStatusMode('progress');
-		engine.startGame({
-			'onProgress': function (current, total) {
-				if (current > 0 && total > 0) {
-					statusProgress.value = current;
-					statusProgress.max = total;
-				} else {
-					statusProgress.removeAttribute('value');
-					statusProgress.removeAttribute('max');
-				}
-			},
-		}).then(() => {
-			setStatusMode('hidden');
-		}, displayFailureNotice);
-	}
-}());
-		</script>
-	</body>
+    async function start() {
+      const missing = Engine.getMissingFeatures({ threads: false });
+      if (missing.length) throw new Error(`Missing browser features: ${missing.join(', ')}`);
+      const engine = new Engine({ ...config, onProgress(current) {
+        if (current > engineLoaded) {
+          engineLoaded = current;
+          updateProgress();
+        }
+      } });
+      watchdog = setInterval(() => {
+        if (performance.now() - lastProgressAt < idleMs || failed) return;
+        notice.textContent = '読み込みに時間がかかっています。通信環境を確認するか、再読み込みしてください。';
+        retryButton.hidden = false;
+      }, 1000);
+      const [, pack] = await Promise.all([engine.init(config.executable), downloadPack()]);
+      if (failed) return;
+      message.textContent = '起動準備中です';
+      await engine.preloadFile(pack, packPath);
+      await engine.start({ args: ['--main-pack', packPath, ...(config.args || [])] });
+      if (failed) return;
+      initializing = false;
+      clearInterval(watchdog);
+      window.removeEventListener('unhandledrejection', onUnhandled);
+      window.removeEventListener('error', onUnhandled);
+      overlay.remove();
+    }
+    start().catch(showFailure);
+  })();
+  </script>
+</body>
 </html>
 
